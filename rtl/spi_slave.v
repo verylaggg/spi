@@ -32,7 +32,7 @@ module spi_slave # (
 )(
     input   clk,
     input   rstn,
-    
+
     input   scl,
     input   ss,
     input   mosi,

@@ -28,7 +28,7 @@ module tb();
     reg [7:0]   mst_ctrl = 8'h00;
     reg         miso_mdl = 1'h0;
     reg         USE_MODEL = 0;
-    
+
     wire            miso;
     wire            clk, clk_20m, clk_50m, clk_100m, rstn;
     wire            scl, ss, mosi, miso_slv;
@@ -56,7 +56,11 @@ module tb();
         .rstn       (rstn       )
     );
 
-    spi_master spi_master_x (
+    spi_master # (
+        .MODE_16B   (1),
+        .CPOL       (),
+        .CPHA       ()
+    ) spi_master_x (
         .clk        (clk_100m   ),
         .rstn       (rstn       ),
         .mst_wfifo  (mst_wfifo  ),
@@ -70,7 +74,10 @@ module tb();
         .miso       (miso       )
     );
 
-    spi_slave spi_slave_x (
+    spi_slave # (
+        .CPOL       (),
+        .CPHA       ()
+    ) spi_slave_x (
         .clk        (clk_100m   ),
         .rstn       (rstn       ),
 
@@ -85,21 +92,21 @@ module tb();
         #123;
 
         TEST_STEP = 2;
-        # RDM_NUM2 ENA_MST('hf, 1);
-        SEND_MISO ({4{32'hDEAD_BEEF}}, mst_ctrl[3:0]);
+        # RDM_NUM2 ENA_MST('h7, 1);
+        SEND_MISO ({4{32'hCAFE_EFAB}}, mst_ctrl[3:0], 1);
         wait (!mst_status[7]);
 
         TEST_STEP = 3;
-        # RDM_NUM2 ENA_MST('hf, 0);
+        # RDM_NUM2 ENA_MST('h7, 0);
         wait (!mst_status[7]);
 
         TEST_STEP = 4;
         # RDM_NUM2 ENA_MST('h5, 1);
-        SEND_MISO ({4{32'hDEAD_BEEF}}, mst_ctrl[3:0]);
+        SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], 1);
         wait (!mst_status[7]);
 
         TEST_STEP = 6;
-        # RDM_NUM2 ENA_MST('hf7, 0);
+        # RDM_NUM2 ENA_MST('h5, 0);
         wait (!mst_status[7]);
 
         #2000;
@@ -124,10 +131,18 @@ module tb();
     task SEND_MISO;
         input [127:0] in;
         input [3:0] len;
+        input       mode_16b;
         integer i;
     begin
-        for (i = 0; i < 8*(len + 1); i = i + 1)
-            @ (negedge scl) miso_mdl = in[127-i];
+        if (mode_16b) begin
+            if (len > 'h7)
+                $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
+            for (i = 0; i < 16*(len + 1); i = i + 1)
+                @ (negedge scl) miso_mdl = in[127-i];
+        end else begin
+            for (i = 0; i < 8*(len + 1); i = i + 1)
+                @ (negedge scl) miso_mdl = in[127-i];
+        end
     end
     endtask
 

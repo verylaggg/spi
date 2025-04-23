@@ -24,11 +24,11 @@ SCL        |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|
              MSB  _____       ___________       _____        
 MOSI   XXXXX_____|     |_____|           |_____|     |______XXXXX
 
-TODO: 16bits once
 TODO: CPHA CPOL option
 */
 
 module spi_master # (
+    parameter MODE_16B = 'h0, // beware of total len > 16 * 8
     parameter CPOL = 'h1,
     parameter CPHA = 'h1
 )(
@@ -45,9 +45,8 @@ module spi_master # (
     output  mosi,
     input   miso
 );
-    reg [3:0]   clk_div_cnt, bit_cnt;
-    reg [3:0]   mst_fsm_n, mst_fsm;
-    reg [4:0]   pld_len_r, pld_cnt;
+    reg [3:0]   mst_fsm_n, mst_fsm, clk_div_cnt;
+    reg [4:0]   pld_len_r, pld_cnt, bit_cnt;
     reg [127:0] data_wbuf, data_rbuf;
     reg         ena;
     wire        clk_div2, clk_div4, clk_div8, clk_div16;
@@ -55,6 +54,7 @@ module spi_master # (
     wire        busy, pld_rdy;
     wire [3:0]  pld_len;
 
+    localparam  MIN_PLD = MODE_16B ? 16 : 8;
     localparam  IDLE    = 0,
                 DATA    = 1;
 
@@ -80,7 +80,7 @@ module spi_master # (
         end else if (mst_fsm == IDLE && pld_rdy) begin
             ena <= 'h1;
             pld_len_r <= pld_len + 'h1;
-        end else if (bit_cnt >= 'h7 && clk_div_cnt >= 'he)
+        end else if (bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt >= 'he)
             ena <= (pld_cnt == (pld_len_r - 'h1)) ? 'h0 : 'h1;
         else begin
             ena <= ena;
@@ -115,8 +115,8 @@ module spi_master # (
 
     always @ (posedge clk or negedge rstn) begin
         if (!rstn || mst_fsm == IDLE)
-            bit_cnt <= 'hf;
-        else if (mst_fsm == DATA && scl_o_ft && bit_cnt >= 7)
+            bit_cnt <= 'h1f;
+        else if (mst_fsm == DATA && scl_o_ft && bit_cnt >= MIN_PLD - 'h1)
             bit_cnt <= 'h0;
         else if (mst_fsm == DATA && scl_o_ft)
             bit_cnt <= bit_cnt + 'h1;
@@ -127,7 +127,7 @@ module spi_master # (
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
             data_wbuf <= 'h0;
-        else if (mst_fsm == DATA && bit_cnt == 'hf)
+        else if (mst_fsm == DATA && bit_cnt == 'h1f)
             data_wbuf <= mst_wfifo;
         else if (CPHA && scl_o_ft)
             data_wbuf <= {data_wbuf[126:0], 1'h0};
@@ -138,7 +138,7 @@ module spi_master # (
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
             data_rbuf <= 'h0;
-        else if (mst_fsm == DATA && bit_cnt == 'hf)
+        else if (mst_fsm == DATA && bit_cnt == 'h1f)
             data_rbuf <= 'h0;
         else if (scl_o_rt)
             data_rbuf <= {data_rbuf[126:0], miso};
@@ -157,5 +157,6 @@ module spi_master # (
     assign scl =  mst_fsm == DATA ? scl_o : CPOL;
     assign mosi = data_wbuf[127];
     assign ss = !ena;
+    assign mst_rfifo = data_rbuf;
 
 endmodule
