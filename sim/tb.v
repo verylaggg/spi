@@ -20,7 +20,9 @@ module tb();
 
     parameter MAX_NUM = 10000;
     parameter MIN_NUM = 256;
+    parameter USE_MODE_16B = 0;
 
+    integer     SEED = 2;
     integer     TEST_STEP = 0;
     integer     RDM_NUM1, RDM_NUM2, RDM_NUM3;
 
@@ -40,10 +42,12 @@ module tb();
     // -MAX_NUM < num1 < MAX_NUM
     //       0 <= num2 < MAX_NUM
     // MIN_NUM <= num3 <= MAX_NUM
-    always@(posedge clk) begin
-        RDM_NUM1 <= $random() % MAX_NUM;
-        RDM_NUM2 <= {$random()} % MAX_NUM;
-        RDM_NUM3 <= MIN_NUM + {$random()} % (MAX_NUM-MIN_NUM+1);
+    initial begin
+        fork
+            forever #10 RDM_NUM1 = $random(SEED) % MAX_NUM;
+            forever #10 RDM_NUM2 = {$random(SEED)} % MAX_NUM;
+            forever #10 RDM_NUM3 = MIN_NUM + {$random(SEED)} % (MAX_NUM-MIN_NUM+1);
+        join
     end
 
     clk_rst_model # (
@@ -57,7 +61,7 @@ module tb();
     );
 
     spi_master # (
-        .MODE_16B   (1),
+        .MODE_16B   (USE_MODE_16B),
         .CPOL       (),
         .CPHA       ()
     ) spi_master_x (
@@ -92,33 +96,33 @@ module tb();
         #123;
 
         TEST_STEP = 2;
-        # RDM_NUM2 ENA_MST('h7, 1);
-        SEND_MISO ({4{32'hCAFE_EFAB}}, mst_ctrl[3:0], 1);
+        ENA_MST('h7, 1);
+        SEND_MISO ({4{32'hCAFE_EFAB}}, mst_ctrl[3:0], USE_MODE_16B);
         wait (!mst_status[7]);
 
         TEST_STEP = 3;
-        # RDM_NUM2 ENA_MST('h7, 0);
+        ENA_MST('h7, 0);
         wait (!mst_status[7]);
 
         TEST_STEP = 4;
-        # RDM_NUM2 ENA_MST('h5, 1);
-        SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], 1);
+        ENA_MST('h5, 1);
+        SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], USE_MODE_16B);
         wait (!mst_status[7]);
 
         TEST_STEP = 6;
-        # RDM_NUM2 ENA_MST('h5, 0);
+        ENA_MST('h5, 0);
         wait (!mst_status[7]);
 
         #2000;
-        TEST_STEP = 5;
+        TEST_STEP = 88;
     end
 
     initial begin
         @ (posedge rstn) $display ("rstn end");
-        wait (TEST_STEP == 'h1);
+        wait (TEST_STEP == 'd1);
         $display("sim start");
 
-        wait (TEST_STEP == 'h5);
+        wait (TEST_STEP == 'd88);
         $display("sim end");
         $finish;
     end
@@ -132,15 +136,14 @@ module tb();
         input [127:0] in;
         input [3:0] len;
         input       mode_16b;
-        integer i;
     begin
         if (mode_16b) begin
             if (len > 'h7)
                 $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
-            for (i = 0; i < 16*(len + 1); i = i + 1)
+            for (integer i = 0; i < 16*(len + 1); i = i + 1)
                 @ (negedge scl) miso_mdl = in[127-i];
         end else begin
-            for (i = 0; i < 8*(len + 1); i = i + 1)
+            for (integer i = 0; i < 8*(len + 1); i = i + 1)
                 @ (negedge scl) miso_mdl = in[127-i];
         end
     end
@@ -150,6 +153,7 @@ module tb();
         input [3:0] len;
         input       ena_mdl;
     begin
+        # RDM_NUM2;
         USE_MODEL = ena_mdl;
         mst_ctrl[7] = 'h1;
         mst_ctrl[3:0] = len;

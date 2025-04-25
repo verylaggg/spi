@@ -17,7 +17,7 @@
 *******************************************************************************/
 /*
 ex. CPOL = 1(idle high), CPHA = 1(even edge sample), data = 8'h5a = 8'b01011010
-CPHA   ____   v__   v__   v__   v__   v__   v__   v__   v____
+CPHA   ____o  v__o  v__o  v__o  v__o  v__o  v__o  v__o  v____
 SCL        |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__| 
 (CPOL)
               0     1     0     1     1     0     1     0           
@@ -28,7 +28,7 @@ TODO: CPHA CPOL option
 */
 
 module spi_master # (
-    parameter MODE_16B = 'h0, // beware of total len > 16 * 8
+    parameter MODE_16B = 'h0, // TODO: beware of total len > 16 * 8
     parameter CPOL = 'h1,
     parameter CPHA = 'h1
 )(
@@ -147,7 +147,7 @@ module spi_master # (
     assign {clk_div16, clk_div8, clk_div4, clk_div2} = clk_div_cnt;
     assign scl_o = clk_div16;
     assign scl_o_rt = clk_div_cnt == 'h7;
-    assign scl_o_ft = clk_div_cnt == 'h0;
+    assign scl_o_ft = mst_fsm == DATA && clk_div_cnt == 'h0;
 
     assign busy = mst_fsm != IDLE;
     assign mst_status = {busy, 7'h0};
