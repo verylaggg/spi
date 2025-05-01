@@ -80,7 +80,9 @@ module spi_master # (
         end else if (mst_fsm == IDLE && pld_rdy) begin
             ena <= 'h1;
             pld_len_r <= pld_len + 'h1;
-        end else if (bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt >= 'he)
+        end else if (CPHA && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt >= 'hd)
+            ena <= (pld_cnt == (pld_len_r - 'h1)) ? 'h0 : 'h1;
+        else if (!CPHA && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt == 'h6)
             ena <= (pld_cnt == (pld_len_r - 'h1)) ? 'h0 : 'h1;
         else begin
             ena <= ena;
@@ -106,20 +108,22 @@ module spi_master # (
 
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
-            clk_div_cnt <= 'h0;
+            clk_div_cnt <= 'h8;
         else if (mst_fsm == DATA)
             clk_div_cnt <= clk_div_cnt + 'h1;
         else
-            clk_div_cnt <= 'h0;
+            clk_div_cnt <= 'h8;
     end
 
     always @ (posedge clk or negedge rstn) begin
         if (!rstn || mst_fsm == IDLE)
             bit_cnt <= 'h1f;
-        else if (mst_fsm == DATA && scl_o_ft && bit_cnt >= MIN_PLD - 'h1)
+        else if (!CPHA && bit_cnt == 'h1f)
             bit_cnt <= 'h0;
-        else if (mst_fsm == DATA && scl_o_ft)
-            bit_cnt <= bit_cnt + 'h1;
+        else if (!CPHA && scl_o_rt)
+            bit_cnt <= (bit_cnt >= MIN_PLD - 'h1) ? 'h0 :bit_cnt + 'h1;
+        else if (CPHA && scl_o_ft)
+            bit_cnt <= (bit_cnt >= MIN_PLD - 'h1) ? 'h0 : bit_cnt + 'h1;
         else
             bit_cnt <= bit_cnt;
     end
@@ -140,7 +144,9 @@ module spi_master # (
             data_rbuf <= 'h0;
         else if (mst_fsm == DATA && bit_cnt == 'h1f)
             data_rbuf <= 'h0;
-        else if (scl_o_rt)
+        else if (CPHA && scl_o_rt)
+            data_rbuf <= {data_rbuf[126:0], miso};
+        else if (!CPHA && scl_o_ft)
             data_rbuf <= {data_rbuf[126:0], miso};
     end
 

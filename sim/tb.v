@@ -21,15 +21,17 @@ module tb();
     parameter MAX_NUM = 10000;
     parameter MIN_NUM = 256;
     parameter USE_MODE_16B = 0;
+    parameter CPHA = 0;
+    parameter CPOL = 1;
 
     integer     SEED = 2;
     integer     TEST_STEP = 0;
     integer     RDM_NUM1, RDM_NUM2, RDM_NUM3;
+    integer     USE_MODEL = 0; // run time change
 
     reg [127:0] mst_wfifo = {16{8'h5a}};
     reg [7:0]   mst_ctrl = 8'h00;
     reg         miso_mdl = 1'h0;
-    reg         USE_MODEL = 0;
 
     wire            miso;
     wire            clk, clk_20m, clk_50m, clk_100m, rstn;
@@ -62,8 +64,8 @@ module tb();
 
     spi_master # (
         .MODE_16B   (USE_MODE_16B),
-        .CPOL       (),
-        .CPHA       ()
+        .CPOL       (CPOL       ),
+        .CPHA       (CPHA       )
     ) spi_master_x (
         .clk        (clk_100m   ),
         .rstn       (rstn       ),
@@ -79,8 +81,8 @@ module tb();
     );
 
     spi_slave # (
-        .CPOL       (),
-        .CPHA       ()
+        .CPOL       (CPOL       ),
+        .CPHA       (CPHA       )
     ) spi_slave_x (
         .clk        (clk_100m   ),
         .rstn       (rstn       ),
@@ -96,21 +98,21 @@ module tb();
         #123;
 
         TEST_STEP = 2;
-        ENA_MST('h7, 1);
-        SEND_MISO ({4{32'hCAFE_EFAB}}, mst_ctrl[3:0], USE_MODE_16B);
-        wait (!mst_status[7]);
-
-        TEST_STEP = 3;
-        ENA_MST('h7, 0);
+        ENA_MST('h0, 1); // (len, use_model)
+        SEND_MISO ({4{32'hCAFE_EFAB}}, mst_ctrl[3:0], USE_MODE_16B, CPOL, CPHA);
         wait (!mst_status[7]);
 
         TEST_STEP = 4;
-        ENA_MST('h5, 1);
-        SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], USE_MODE_16B);
+        ENA_MST('hf, 1);
+        SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], USE_MODE_16B, CPOL, CPHA);
         wait (!mst_status[7]);
 
-        TEST_STEP = 6;
-        ENA_MST('h5, 0);
+        TEST_STEP = 3;
+        ENA_MST('h0, 0);
+        wait (!mst_status[7]);
+
+        TEST_STEP = 7;
+        ENA_MST('hf, 0);
         wait (!mst_status[7]);
 
         #2000;
@@ -136,15 +138,31 @@ module tb();
         input [127:0] in;
         input [3:0] len;
         input       mode_16b;
+        input       CPOL;
+        input       CHPA;
     begin
-        if (mode_16b) begin
-            if (len > 'h7)
-                $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
-            for (integer i = 0; i < 16*(len + 1); i = i + 1)
-                @ (negedge scl) miso_mdl = in[127-i];
+        if (CPOL && CPHA) begin
+            if (mode_16b) begin
+                if (len > 'h7)
+                    $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
+                for (integer i = 0; i < (16 * len + 16); i = i + 1)
+                    @ (negedge scl) miso_mdl = in[127-i];
+            end else begin
+                for (integer i = 0; i < (8 * len + 8); i = i + 1)
+                    @ (negedge scl) miso_mdl = in[127-i];
+            end
         end else begin
-            for (integer i = 0; i < 8*(len + 1); i = i + 1)
-                @ (negedge scl) miso_mdl = in[127-i];
+            if (mode_16b) begin
+                if (len > 'h7)
+                    $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
+                miso_mdl = in[127];
+                for (integer i = 0; i < (16 * len + 15); i = i + 1)
+                    @ (posedge scl) miso_mdl = in[126-i];
+            end else begin
+                miso_mdl = in[127];
+                for (integer i = 0; i < (8 * len + 7); i = i + 1)
+                    @ (posedge scl) miso_mdl = in[126-i];
+            end
         end
     end
     endtask

@@ -73,17 +73,25 @@ module spi_slave # (
     end
 
     always @ (posedge clk or negedge rstn) begin
-        if (!rstn)
+        if (!rstn || slv_fsm == IDLE)
             data_wbuf <= INIT;
-        else if (slv_fsm == DATA && scl_fp)
+        else if (CPHA && scl_fp)
             data_wbuf <= {data_wbuf[126:0], 1'h0};
+        else if (!CPHA && scl_rp)
+            data_wbuf <= {data_wbuf[126:0], 1'h0};
+        else
+            data_wbuf <= data_wbuf;
     end
 
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
-            data_rbuf <= INIT;
-        else if (scl_rp)
-            data_rbuf <= {data_rbuf[126:0], mosi};
+            data_rbuf <= 'h0;
+        else if (CPHA && scl_rp)
+            data_rbuf <= (slv_fsm == IDLE) ? 'h0 : {data_rbuf[126:0], mosi};
+        else if (!CPHA && scl_fp)
+            data_rbuf <= (slv_fsm == IDLE) ? 'h0 : {data_rbuf[126:0], mosi};
+        else
+            data_rbuf <= data_rbuf;
     end
 
     assign scl_rp = !scl_d1 && scl;
