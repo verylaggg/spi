@@ -48,7 +48,8 @@ module spi_master # (
     reg [3:0]   mst_fsm_n, mst_fsm, clk_div_cnt;
     reg [4:0]   pld_len_r, pld_cnt, bit_cnt;
     reg [127:0] data_wbuf, data_rbuf;
-    reg         ena;
+    reg         ena,ena_d1, ena_rp_d1;
+    wire        ena_rp;
     wire        clk_div2, clk_div4, clk_div8, clk_div16;
     wire        scl_o, scl_o_rt, scl_o_ft;
     wire        busy, pld_rdy;
@@ -80,9 +81,9 @@ module spi_master # (
         end else if (mst_fsm == IDLE && pld_rdy) begin
             ena <= 'h1;
             pld_len_r <= pld_len + 'h1;
-        end else if (CPHA && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt >= 'hd)
+        end else if (CPHA == CPOL && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt >= 'hd)
             ena <= (pld_cnt == (pld_len_r - 'h1)) ? 'h0 : 'h1;
-        else if (!CPHA && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt == 'h6)
+        else if ((CPHA ^ CPOL) && bit_cnt >= MIN_PLD - 'h1 && clk_div_cnt == 'h6)
             ena <= (pld_cnt == (pld_len_r - 'h1)) ? 'h0 : 'h1;
         else begin
             ena <= ena;
@@ -93,9 +94,15 @@ module spi_master # (
     always @ (posedge clk or negedge rstn) begin
         if (!rstn || mst_fsm == IDLE)
             pld_cnt <= 'hff;
-        else if (scl_o_rt && bit_cnt == 'h0)
-            pld_cnt <= pld_cnt + 'h1;
-        else
+        else if (scl_o_rt) begin
+            if (!CPOL && !CPHA)begin
+                if (bit_cnt == 'h1) // TODO: temp fix for CPHA/OL = 0
+                    pld_cnt <= pld_cnt + 'h1;
+            end else begin
+                if (bit_cnt == 'h0)
+                    pld_cnt <= pld_cnt + 'h1;
+            end
+        end else
             pld_cnt <= pld_cnt;
     end
 
@@ -115,14 +122,23 @@ module spi_master # (
             clk_div_cnt <= 'h8;
     end
 
+    always @ (posedge clk) begin
+        ena_d1 <= ena;
+        ena_rp_d1 <= ena_rp;
+    end
+
     always @ (posedge clk or negedge rstn) begin
-        if (!rstn || mst_fsm == IDLE)
+        if (!rstn)
             bit_cnt <= 'h1f;
-        else if (!CPHA && bit_cnt == 'h1f)
+        else if (!CPOL && !CPHA && ena_rp)
+            bit_cnt <= 'h0; // TODO: temp fix for CPHA/OL = 0
+        else if (mst_fsm == IDLE)
+            bit_cnt <= 'h1f;
+        else if ((CPHA ^ CPOL) && bit_cnt == 'h1f)
             bit_cnt <= 'h0;
-        else if (!CPHA && scl_o_rt)
+        else if ((CPHA ^ CPOL) && scl_o_rt)
             bit_cnt <= (bit_cnt >= MIN_PLD - 'h1) ? 'h0 :bit_cnt + 'h1;
-        else if (CPHA && scl_o_ft)
+        else if (CPHA == CPOL && scl_o_ft)
             bit_cnt <= (bit_cnt >= MIN_PLD - 'h1) ? 'h0 : bit_cnt + 'h1;
         else
             bit_cnt <= bit_cnt;
@@ -131,22 +147,26 @@ module spi_master # (
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
             data_wbuf <= 'h0;
+        else if (mst_fsm == IDLE && !CPOL && !CPHA)
+            data_wbuf <= mst_wfifo; // TODO: temp fix for CPHA/OL = 0
         else if (mst_fsm == DATA && bit_cnt == 'h1f)
             data_wbuf <= mst_wfifo;
-        else if (CPHA && scl_o_ft)
+        else if (CPHA == CPOL && scl_o_ft)
             data_wbuf <= {data_wbuf[126:0], 1'h0};
-        else if (!CPHA && scl_o_rt)
+        else if ((CPHA ^ CPOL) && scl_o_rt)
             data_wbuf <= {data_wbuf[126:0], 1'h0};
     end
 
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
             data_rbuf <= 'h0;
-        else if (mst_fsm == DATA && bit_cnt == 'h1f)
+        else if (mst_fsm == DATA && bit_cnt == 'h1f && (CPHA || CPOL))
             data_rbuf <= 'h0;
-        else if (CPHA && scl_o_rt)
+        else if (!CPOL && !CPHA && ena_rp_d1)
+            data_rbuf <= {127'h0, miso}; // TODO: temp fix for CPHA/OL = 0
+        else if (CPHA == CPOL && scl_o_rt)
             data_rbuf <= {data_rbuf[126:0], miso};
-        else if (!CPHA && scl_o_ft)
+        else if ((CPHA ^ CPOL) && scl_o_ft)
             data_rbuf <= {data_rbuf[126:0], miso};
     end
 
@@ -154,6 +174,7 @@ module spi_master # (
     assign scl_o = clk_div16;
     assign scl_o_rt = clk_div_cnt == 'h7;
     assign scl_o_ft = mst_fsm == DATA && clk_div_cnt == 'h0;
+    assign ena_rp = !ena_d1 && ena;
 
     assign busy = mst_fsm != IDLE;
     assign mst_status = {busy, 7'h0};

@@ -73,11 +73,15 @@ module spi_slave # (
     end
 
     always @ (posedge clk or negedge rstn) begin
-        if (!rstn || slv_fsm == IDLE)
+        if (!rstn)
             data_wbuf <= INIT;
-        else if (CPHA && scl_fp)
+        else if (!CPOL && !CPHA && scl_fp) // TODO: temp fix for CPHA/OL = 0
             data_wbuf <= {data_wbuf[126:0], 1'h0};
-        else if (!CPHA && scl_rp)
+        else if (slv_fsm == IDLE)
+            data_wbuf <= INIT;
+        else if (CPHA == CPOL && scl_fp)
+            data_wbuf <= {data_wbuf[126:0], 1'h0};
+        else if ((CPHA ^ CPOL) && scl_rp)
             data_wbuf <= {data_wbuf[126:0], 1'h0};
         else
             data_wbuf <= data_wbuf;
@@ -86,9 +90,9 @@ module spi_slave # (
     always @ (posedge clk or negedge rstn) begin
         if (!rstn)
             data_rbuf <= 'h0;
-        else if (CPHA && scl_rp)
+        else if (CPHA == CPOL && scl_rp)
             data_rbuf <= (slv_fsm == IDLE) ? 'h0 : {data_rbuf[126:0], mosi};
-        else if (!CPHA && scl_fp)
+        else if ((CPHA ^ CPOL) && scl_fp)
             data_rbuf <= (slv_fsm == IDLE) ? 'h0 : {data_rbuf[126:0], mosi};
         else
             data_rbuf <= data_rbuf;

@@ -94,6 +94,7 @@ module tb();
     );
 
     initial begin
+        @ (posedge rstn) $display ("rstn end");
         TEST_STEP = 1;
         #123;
 
@@ -103,7 +104,7 @@ module tb();
         wait (!mst_status[7]);
 
         TEST_STEP = 4;
-        ENA_MST('hf, 1);
+        ENA_MST('h7, 1);
         SEND_MISO ({4{32'hBABE_FACE}}, mst_ctrl[3:0], USE_MODE_16B, CPOL, CPHA);
         wait (!mst_status[7]);
 
@@ -112,7 +113,7 @@ module tb();
         wait (!mst_status[7]);
 
         TEST_STEP = 7;
-        ENA_MST('hf, 0);
+        ENA_MST('h7, 0);
         wait (!mst_status[7]);
 
         #2000;
@@ -120,7 +121,6 @@ module tb();
     end
 
     initial begin
-        @ (posedge rstn) $display ("rstn end");
         wait (TEST_STEP == 'd1);
         $display("sim start");
 
@@ -140,30 +140,71 @@ module tb();
         input       mode_16b;
         input       CPOL;
         input       CHPA;
+        reg [127:0]     slv_mdl_dbuf;
     begin
-        if (CPOL && CPHA) begin
-            if (mode_16b) begin
-                if (len > 'h7)
-                    $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
-                for (integer i = 0; i < (16 * len + 16); i = i + 1)
-                    @ (negedge scl) miso_mdl = in[127-i];
-            end else begin
-                for (integer i = 0; i < (8 * len + 8); i = i + 1)
-                    @ (negedge scl) miso_mdl = in[127-i];
+        slv_mdl_dbuf = 'h0;
+        if (mode_16b && len > 'h7)
+            $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
+        fork
+            // tx
+            if (CPOL && !CPHA) begin
+                if (mode_16b) begin
+                    miso_mdl = in[127];
+                    for (integer i = 0; i < (16 * len + 15); i = i + 1)
+                        @ (posedge scl) miso_mdl = in[126-i];
+                end else begin
+                    miso_mdl = in[127];
+                    for (integer i = 0; i < (8 * len + 7); i = i + 1)
+                        @ (posedge scl) miso_mdl = in[126-i];
+                end
+            end else if (!CPOL && CPHA) begin
+                if (mode_16b) begin
+                    for (integer i = 0; i < (16 * len + 16); i = i + 1)
+                        @ (posedge scl) miso_mdl = in[127-i];
+                end else begin
+                    for (integer i = 0; i < (8 * len + 8); i = i + 1)
+                        @ (posedge scl) miso_mdl = in[127-i];
+                end
+            end else if (CPOL && CPHA) begin
+                if (mode_16b) begin
+                    for (integer i = 0; i < (16 * len + 16); i = i + 1)
+                        @ (negedge scl) miso_mdl = in[127-i];
+                end else begin
+                    for (integer i = 0; i < (8 * len + 8); i = i + 1)
+                        @ (negedge scl) miso_mdl = in[127-i];
+                end
+            end if (!CPOL && !CPHA) begin
+                if (mode_16b) begin
+                    miso_mdl = in[127];
+                    for (integer i = 0; i < (16 * len + 15); i = i + 1)
+                        @ (negedge scl) miso_mdl = in[126-i];
+                end else begin
+                    miso_mdl = in[127];
+                    for (integer i = 0; i < (8 * len + 7); i = i + 1)
+                        @ (negedge scl) miso_mdl = in[126-i];
+                end
             end
-        end else begin
-            if (mode_16b) begin
-                if (len > 'h7)
-                    $display ("[WARNING] %0t ns SPI SLV MODEL: exceed designed fifo len > 128b, which may send x", $realtime);
-                miso_mdl = in[127];
-                for (integer i = 0; i < (16 * len + 15); i = i + 1)
-                    @ (posedge scl) miso_mdl = in[126-i];
+
+            // rx
+            if (CPOL != CPHA) begin
+                if (mode_16b) begin
+                    for (integer i = 0; i < (16 * len + 16); i = i + 1)
+                        @ (negedge scl) slv_mdl_dbuf[127-i] = mosi;
+                end else begin
+                    for (integer i = 0; i < (8 * len + 8); i = i + 1)
+                        @ (negedge scl) slv_mdl_dbuf[127-i] = mosi;
+                end
             end else begin
-                miso_mdl = in[127];
-                for (integer i = 0; i < (8 * len + 7); i = i + 1)
-                    @ (posedge scl) miso_mdl = in[126-i];
+                if (mode_16b) begin
+                    for (integer i = 0; i < (16 * len + 16); i = i + 1)
+                        @ (posedge scl) slv_mdl_dbuf[127-i] = mosi;
+                end else begin
+                    for (integer i = 0; i < (8 * len + 8); i = i + 1)
+                        @ (posedge scl) slv_mdl_dbuf[127-i] = mosi;
+                end
             end
-        end
+        join
+        $display ("%0t ns SLV MODEL: get %0h in buffer", $realtime, slv_mdl_dbuf);
     end
     endtask
 
