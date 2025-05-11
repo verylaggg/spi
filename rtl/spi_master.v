@@ -24,7 +24,7 @@ SCL        |__|  |__|  |__|  |__|  |__|  |__|  |__|  |__|
              MSB  _____       ___________       _____        
 MOSI   XXXXX_____|     |_____|           |_____|     |______XXXXX
 
-TODO: CPHA CPOL option
+TODO: remove magic numbers
 */
 
 module spi_master # (
